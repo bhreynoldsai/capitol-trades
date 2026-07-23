@@ -1,0 +1,25 @@
+{
+  "name": "capitol-trades",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Capitol Trades — a dashboard tracking the stock transactions disclosed by members of the U.S. Congress under the STOCK Act.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "seed": "node src/data/generate.mjs"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.12.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.39",
+    "tailwindcss": "^3.4.4",
+    "vite": "^5.3.3"
+  }
+}
