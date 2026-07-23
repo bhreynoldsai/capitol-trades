@@ -95,6 +95,9 @@ provider API key:
 2. **Add the key as a Vercel environment variable** (Project → Settings →
    Environment Variables), using the name for your provider:
    - `QUIVER_API_KEY`, or `FMP_API_KEY`, or `FINNHUB_API_KEY`
+   - (Quiver, optional) `QUIVER_TIER` — `bulk` (default, full history) or `live`
+     (recent updates) if your plan only allows one; `QUIVER_MAX` caps how many
+     of the most-recent records are returned (default 5000).
    - (Finnhub only, optional) `FINNHUB_SYMBOLS` — comma-separated watchlist.
 3. **Redeploy.** `/api/trades` now returns live disclosures; the header badge
    flips from *Sample data* to *Live feed*. The secret key stays server-side and

@@ -90,7 +90,7 @@ export function normalizeRecord(r, chamberHint) {
     const max = Number(r.amountTo) || null;
     amt = { min, max, label: min != null && max != null ? `$${min.toLocaleString()} - $${max.toLocaleString()}` : 'Unknown' };
   } else {
-    amt = parseAmount(r.amountLabel || r.amount || r.Range);
+    amt = parseAmount(r.amountLabel || r.amount || r.Range || r.Amount);
   }
 
   const transactionDate = normalizeDate(r.transactionDate || r.transaction_date || r.TransactionDate);

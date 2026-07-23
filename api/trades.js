@@ -27,11 +27,39 @@ async function getJson(url, options) {
 }
 
 async function fromQuiver(key) {
-  // Bulk endpoint returns every recent transaction across both chambers.
-  const data = await getJson('https://api.quiverquant.com/beta/bulk/congresstrading', {
-    headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
-  });
-  return Array.isArray(data) ? data : [];
+  // Quiver's auth scheme has appeared as both "Bearer <key>" and "Token <key>"
+  // across doc revisions; try Bearer, fall back to Token on an auth error.
+  async function quiverGet(url) {
+    const attempt = (scheme) =>
+      getJson(url, { headers: { Authorization: `${scheme} ${key}`, Accept: 'application/json' } });
+    try {
+      return await attempt('Bearer');
+    } catch (e) {
+      if (/HTTP 40[13]/.test(String(e.message))) return attempt('Token');
+      throw e;
+    }
+  }
+
+  // QUIVER_TIER selects the plan-appropriate path: "bulk" (full history, higher
+  // tiers) or "live" (recent updates). Fetch House + Senate and tag the chamber.
+  const tier = (process.env.QUIVER_TIER || 'bulk').toLowerCase() === 'live' ? 'live' : 'bulk';
+  const base = `https://api.quiverquant.com/beta/${tier}`;
+  const [house, senate] = await Promise.all([
+    quiverGet(`${base}/congresstrading`).catch(() => []),
+    quiverGet(`${base}/senatetrading`).catch(() => []),
+  ]);
+  const tag = (rows, chamber) =>
+    Array.isArray(rows) ? rows.map((r) => ({ chamber, ...r })) : [];
+  // `chamber` is spread first so an explicit House/Senate field in the record wins.
+  const all = [...tag(house, 'House'), ...tag(senate, 'Senate')];
+
+  // Bulk can be very large; keep the most recent slice to bound the payload.
+  const MAX = Number(process.env.QUIVER_MAX || 5000);
+  if (all.length > MAX) {
+    all.sort((a, b) => String(b.TransactionDate || '').localeCompare(String(a.TransactionDate || '')));
+    return all.slice(0, MAX);
+  }
+  return all;
 }
 
 async function fromFmp(key) {
