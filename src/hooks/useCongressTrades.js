@@ -24,8 +24,10 @@ export const SOURCE_PRESETS = {
   fmpSenate: 'https://financialmodelingprep.com/stable/senate-latest?apikey={KEY}',
 };
 
-// No default network calls — configure a feed via the overrides below.
-export const DEFAULT_SOURCES = [];
+// By default the app calls its own same-origin serverless proxy (api/trades.js),
+// which talks to a keyed provider server-side. If that isn't deployed or no key
+// is configured it returns non-2xx and the app quietly stays on sample data.
+export const DEFAULT_SOURCES = [{ url: '/api/trades', chamber: undefined }];
 
 function overrideSources() {
   try {
@@ -63,8 +65,11 @@ export function useCongressTrades({ live = true } = {}) {
   const inflight = useRef(null);
 
   const load = useCallback(async () => {
-    const sources = overrideSources() || DEFAULT_SOURCES;
-    // No feed configured — show the sample dataset without a spurious error.
+    const override = overrideSources();
+    const sources = override || DEFAULT_SOURCES;
+    // A failure of the built-in default proxy is expected (no key / static host),
+    // so it should fall back to sample data silently — no error banner.
+    const isDefault = !override;
     if (!sources.length) {
       setSource('seed');
       setLoading(false);
@@ -85,9 +90,10 @@ export function useCongressTrades({ live = true } = {}) {
         setError(failed.length ? `${failed.length} source(s) unavailable` : null);
         setLastUpdated(new Date());
       } else {
-        // Nothing reachable — keep the seed dataset already on screen.
+        // Nothing reachable — keep the seed dataset already on screen. Stay
+        // quiet for the built-in default; surface the error for explicit feeds.
         setSource('seed');
-        setError(failed[0]?.reason?.message || 'Live feeds unreachable');
+        setError(isDefault ? null : failed[0]?.reason?.message || 'Live feeds unreachable');
       }
     } catch (e) {
       if (e.name !== 'AbortError') setError(e.message);

@@ -81,9 +81,39 @@ key-injecting) endpoint at runtime via either:
 - `?dataUrl=https://your-proxy.example/congress.json` in the address bar, or
 - `window.CONGRESS_DATA_URL = 'https://your-proxy.example/congress.json'` before load.
 
-A typical production setup is a tiny serverless function that calls Quiver or
-Finnhub with the secret key, normalizes/caches the result, and serves CORS-open
-JSON to the dashboard.
+## Getting real data (live feed)
+
+The app ships with a same-origin serverless proxy at [`api/trades.js`](api/trades.js)
+and calls **`/api/trades`** by default, so on Vercel you only need to add a
+provider API key:
+
+1. **Pick a provider and get an API key** (all need a paid or free-tier signup):
+   - **Quiver Quantitative** — recommended; one bulk call covers both chambers
+     with party and amount range. https://www.quiverquant.com/products/api/
+   - **Financial Modeling Prep** — https://site.financialmodelingprep.com/
+   - **Finnhub** — https://finnhub.io/ (symbol-scoped; slower)
+2. **Add the key as a Vercel environment variable** (Project → Settings →
+   Environment Variables), using the name for your provider:
+   - `QUIVER_API_KEY`, or `FMP_API_KEY`, or `FINNHUB_API_KEY`
+   - (Finnhub only, optional) `FINNHUB_SYMBOLS` — comma-separated watchlist.
+3. **Redeploy.** `/api/trades` now returns live disclosures; the header badge
+   flips from *Sample data* to *Live feed*. The secret key stays server-side and
+   the response is edge-cached for an hour.
+
+No key configured (or a plain static host without functions) → `/api/trades`
+returns non-2xx and the dashboard **silently falls back to the sample dataset**.
+
+The proxy calls the provider server-side; the browser normalizes the response
+via `src/data/normalize.js`, which already understands the Quiver, Finnhub and
+FMP shapes.
+
+### No-cost alternative (official sources)
+
+If you'd rather not pay for an API, pull directly from the free official
+sources — the House Clerk XML feed (`src/data/ingest-house-clerk.mjs`) plus the
+Senate eFD — on a schedule (Vercel Cron or a GitHub Action), parse the PTR PDFs
+(newer are text; older need OCR), write the normalized JSON, and point
+`/api/trades` (or `?dataUrl=`) at it. More work, but no recurring cost.
 
 ### Bundled sample data (default)
 
