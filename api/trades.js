@@ -40,40 +40,14 @@ async function fromQuiver(key) {
     }
   }
 
-  const tag = (rows, chamber) =>
-    Array.isArray(rows) ? rows.map((r) => ({ chamber, ...r })) : [];
-
-  // Dedup key spanning both feeds' field names (member + ticker + date +
-  // action + amount). Quiver's congresstrading feed already includes Senate
-  // trades — with Party and a TransactionDate — while senatetrading repeats
-  // them with fewer fields (no party, a `Date` field). Keeping the first
-  // (congresstrading) occurrence gives the richer record and avoids duplicates.
-  const keyOf = (r) =>
-    [
-      r.BioGuideID || r.Representative || r.Senator || r.Name || '',
-      String(r.Ticker || '').toUpperCase(),
-      r.TransactionDate || r.Traded || r.Date || '',
-      r.Transaction || '',
-      r.Amount || r.Range || r.Trade_Size_USD || '',
-    ].join('|');
-
+  // Quiver's `congresstrading` feed already spans BOTH chambers — each record's
+  // `House` field marks "Representatives" vs "Senate" — and carries Party,
+  // Ticker, TransactionDate and Range. The separate `senatetrading` feed adds
+  // only party-less, differently-shaped Senate rows, so we use congresstrading
+  // alone: cleaner, fully attributed, and no duplicate/mismatch handling needed.
   async function fetchTier(tier) {
-    const base = `https://api.quiverquant.com/beta/${tier}`;
-    const [congress, senate] = await Promise.all([
-      quiverGet(`${base}/congresstrading`).catch(() => []),
-      quiverGet(`${base}/senatetrading`).catch(() => []),
-    ]);
-    // congresstrading first so its richer records win the dedupe.
-    const rows = [...tag(congress, 'House'), ...tag(senate, 'Senate')];
-    const seen = new Set();
-    const out = [];
-    for (const r of rows) {
-      const k = keyOf(r);
-      if (seen.has(k)) continue;
-      seen.add(k);
-      out.push(r);
-    }
-    return out;
+    const rows = await quiverGet(`https://api.quiverquant.com/beta/${tier}/congresstrading`).catch(() => []);
+    return Array.isArray(rows) ? rows : [];
   }
 
   // Default to the "live" feed: recent disclosures, a few hundred rows — fast to
