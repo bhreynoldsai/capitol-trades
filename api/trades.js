@@ -40,21 +40,29 @@ async function fromQuiver(key) {
     }
   }
 
-  // QUIVER_TIER selects the plan-appropriate path: "bulk" (full history, higher
-  // tiers) or "live" (recent updates). Fetch House + Senate and tag the chamber.
-  const tier = (process.env.QUIVER_TIER || 'bulk').toLowerCase() === 'live' ? 'live' : 'bulk';
-  const base = `https://api.quiverquant.com/beta/${tier}`;
-  const [house, senate] = await Promise.all([
-    quiverGet(`${base}/congresstrading`).catch(() => []),
-    quiverGet(`${base}/senatetrading`).catch(() => []),
-  ]);
   const tag = (rows, chamber) =>
     Array.isArray(rows) ? rows.map((r) => ({ chamber, ...r })) : [];
-  // `chamber` is spread first so an explicit House/Senate field in the record wins.
-  const all = [...tag(house, 'House'), ...tag(senate, 'Senate')];
 
-  // Bulk can be very large; keep the most recent slice to bound the payload.
-  const MAX = Number(process.env.QUIVER_MAX || 5000);
+  // Fetch House + Senate for a given tier and tag chamber.
+  async function fetchTier(tier) {
+    const base = `https://api.quiverquant.com/beta/${tier}`;
+    const [house, senate] = await Promise.all([
+      quiverGet(`${base}/congresstrading`).catch(() => []),
+      quiverGet(`${base}/senatetrading`).catch(() => []),
+    ]);
+    // `chamber` spread first so an explicit House/Senate field in the record wins.
+    return [...tag(house, 'House'), ...tag(senate, 'Senate')];
+  }
+
+  // Default to the "live" feed: recent disclosures, a few hundred rows — fast to
+  // fetch and small to ship. "bulk" (full history) is opt-in via QUIVER_TIER and
+  // is slow enough that the client can time out. Fall back to bulk if live is empty.
+  const preferred = (process.env.QUIVER_TIER || 'live').toLowerCase() === 'bulk' ? 'bulk' : 'live';
+  let all = await fetchTier(preferred);
+  if (!all.length && preferred !== 'bulk') all = await fetchTier('bulk');
+
+  // Bound the payload to the most recent N records.
+  const MAX = Number(process.env.QUIVER_MAX || 1500);
   if (all.length > MAX) {
     const when = (r) => String(r.Traded || r.TransactionDate || r.transactionDate || '');
     all.sort((a, b) => when(b).localeCompare(when(a)));

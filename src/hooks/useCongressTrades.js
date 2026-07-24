@@ -78,7 +78,7 @@ export function useCongressTrades({ live = true } = {}) {
     if (inflight.current) inflight.current.abort();
     const ctrl = new AbortController();
     inflight.current = ctrl;
-    const timeout = setTimeout(() => ctrl.abort(), 15000);
+    const timeout = setTimeout(() => ctrl.abort(), 30000);
     setLoading(true);
     try {
       const results = await Promise.allSettled(sources.map((s) => fetchSource(s, ctrl.signal)));
