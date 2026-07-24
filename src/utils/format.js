@@ -38,6 +38,13 @@ export function fmtNum(n) {
   return n.toLocaleString('en-US');
 }
 
+// Signed percent with a real minus sign, e.g. +6.6% / −0.5%.
+export function fmtSignedPct(n, digits = 1) {
+  if (n == null || Number.isNaN(n)) return null;
+  const sign = n >= 0 ? '+' : '−';
+  return `${sign}${Math.abs(n).toFixed(digits)}%`;
+}
+
 export function fmtDate(iso) {
   if (!iso) return '--';
   const d = new Date(iso + (iso.length === 10 ? 'T00:00:00Z' : ''));

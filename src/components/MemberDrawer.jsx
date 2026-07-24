@@ -5,6 +5,7 @@ import {
 } from '../utils/format.js';
 import { topTickers } from '../utils/aggregate.js';
 import DayNews from './DayNews.jsx';
+import PerfBadge from './PerfBadge.jsx';
 
 export default function MemberDrawer({ member, trades, onClose }) {
   const rows = useMemo(
@@ -113,6 +114,7 @@ function TradeRow({ t }) {
         <div className="text-right shrink-0">
           <div className="text-sm text-heading">{fmtUSD(amountMidpoint(t))}</div>
           <div className="text-[11px] text-body/50">{fmtDate(t.transactionDate)}</div>
+          <PerfBadge trade={t} compact />
         </div>
       </div>
       {t.transactionDate && (

@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import {
   fmtDate, fmtUSD, amountMidpoint, tradeSide, SIDE_COLOR, SIDE_LABEL,
   PARTY_COLOR, PARTY_LABEL,
 } from '../utils/format.js';
+import DayNews from './DayNews.jsx';
+import PerfBadge from './PerfBadge.jsx';
 
 const PAGE = 25;
 
@@ -37,6 +39,7 @@ const COLUMNS = [
   { key: 'ticker', label: 'Ticker', sort: (t) => t.ticker || '' },
   { key: 'type', label: 'Type', sort: (t) => t.type },
   { key: 'amount', label: 'Amount', sort: (t) => amountMidpoint(t), align: 'right' },
+  { key: 'perf', label: 'Since Trade', sort: (t) => (t.excessReturn ?? t.priceChange ?? -1e9), align: 'right' },
   { key: 'lag', label: 'Lag', sort: (t) => t.disclosureLagDays ?? 1e9, align: 'right' },
 ];
 
@@ -44,6 +47,15 @@ export default function TradesTable({ trades, onSelectMember }) {
   const [sortKey, setSortKey] = useState('transactionDate');
   const [dir, setDir] = useState('desc');
   const [page, setPage] = useState(0);
+  const [openNews, setOpenNews] = useState(() => new Set());
+
+  const toggleNews = (id) =>
+    setOpenNews((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const sorted = useMemo(() => {
     const col = COLUMNS.find((c) => c.key === sortKey) || COLUMNS[0];
@@ -93,35 +105,60 @@ export default function TradesTable({ trades, onSelectMember }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((t) => (
-              <tr key={t.id} className="border-b border-edge/50 hover:bg-bg/40">
-                <td className="px-3 py-2 whitespace-nowrap text-body/80">{fmtDate(t.transactionDate)}</td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  <button
-                    className="inline-flex items-center gap-2 hover:text-accent text-heading"
-                    onClick={() => onSelectMember?.(t.member)}
-                  >
-                    <PartyBadge party={t.party} />
-                    <span>{t.member}</span>
-                    <span className="text-body/50 text-xs">{t.chamber === 'Senate' ? 'Sen.' : 'Rep.'} {t.state}</span>
-                  </button>
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  <span className="font-semibold text-heading">{t.ticker || '—'}</span>
-                  <span className="block text-[11px] text-body/50 max-w-[180px] truncate">{t.asset}</span>
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap"><SideTag type={t.type} /></td>
-                <td className="px-3 py-2 whitespace-nowrap text-right text-heading">
-                  {fmtUSD(amountMidpoint(t))}
-                  <span className="block text-[11px] text-body/50">{t.amountLabel}</span>
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-right">
-                  <span className={t.disclosureLagDays > 45 ? 'text-[#ef4444]' : 'text-body/70'}>
-                    {t.disclosureLagDays != null ? `${t.disclosureLagDays}d` : '—'}
-                  </span>
-                </td>
-              </tr>
-            ))}
+            {rows.map((t) => {
+              const newsOpen = openNews.has(t.id);
+              return (
+                <Fragment key={t.id}>
+                  <tr className="border-b border-edge/50 hover:bg-bg/40">
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <button
+                        className="inline-flex items-center gap-1 text-body/80 hover:text-accent"
+                        onClick={() => t.transactionDate && toggleNews(t.id)}
+                        title="Show major news that day"
+                      >
+                        {fmtDate(t.transactionDate)}
+                        <span className={newsOpen ? 'text-accent' : 'text-body/40'}>📰</span>
+                      </button>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <button
+                        className="inline-flex items-center gap-2 hover:text-accent text-heading"
+                        onClick={() => onSelectMember?.(t.member)}
+                      >
+                        <PartyBadge party={t.party} />
+                        <span>{t.member}</span>
+                        <span className="text-body/50 text-xs">{t.chamber === 'Senate' ? 'Sen.' : 'Rep.'} {t.state}</span>
+                      </button>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <span className="font-semibold text-heading">{t.ticker || '—'}</span>
+                      <span className="block text-[11px] text-body/50 max-w-[180px] truncate">{t.asset}</span>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap"><SideTag type={t.type} /></td>
+                    <td className="px-3 py-2 whitespace-nowrap text-right text-heading">
+                      {fmtUSD(amountMidpoint(t))}
+                      <span className="block text-[11px] text-body/50">{t.amountLabel}</span>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-right">
+                      <PerfBadge trade={t} compact />
+                      {t.priceChange == null && t.excessReturn == null && <span className="text-body/40">—</span>}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-right">
+                      <span className={t.disclosureLagDays > 45 ? 'text-[#ef4444]' : 'text-body/70'}>
+                        {t.disclosureLagDays != null ? `${t.disclosureLagDays}d` : '—'}
+                      </span>
+                    </td>
+                  </tr>
+                  {newsOpen && (
+                    <tr className="border-b border-edge/50 bg-bg/30">
+                      <td colSpan={COLUMNS.length} className="px-4 py-2">
+                        <DayNews date={t.transactionDate} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
             {rows.length === 0 && (
               <tr>
                 <td colSpan={COLUMNS.length} className="px-3 py-8 text-center text-body/50">

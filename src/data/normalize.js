@@ -131,6 +131,7 @@ export function normalizeRecord(r, chamberHint) {
     (district && /^[A-Z]{2}/.test(district) ? district.slice(0, 2) : '') ||
     (office && /^[A-Z]{2}\d/.test(office) ? office.slice(0, 2) : '');
   const ownerRaw = r.owner || r.ownerType || '';
+  const num = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
 
   return {
     id: r.id || `tx_auto_${autoId++}`,
@@ -149,6 +150,11 @@ export function normalizeRecord(r, chamberHint) {
     transactionDate,
     disclosureDate,
     disclosureLagDays: r.disclosureLagDays ?? daysBetween(transactionDate, disclosureDate),
+    // Performance since the trade (Quiver): % move of the stock, of SPY, and the
+    // excess (alpha). Present only on live data; null on the sample dataset.
+    priceChange: num(r.priceChange ?? r.PriceChange),
+    spyChange: num(r.spyChange ?? r.SPYChange),
+    excessReturn: num(r.excessReturn ?? r.ExcessReturn),
   };
 }
 
