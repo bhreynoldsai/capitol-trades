@@ -66,20 +66,35 @@ function stripMarkup(line) {
   return { text: s, url };
 }
 
+function cleanCategory(s) {
+  return s
+    .replace(/\[\[[^\]|]*\|([^\]]+)\]\]/g, '$1')
+    .replace(/\[\[([^\]]+)\]\]/g, '$1')
+    .replace(/'''?/g, '')
+    .trim();
+}
+
+// Current-events day pages group items under bold category headers
+// ('''Business and economy'''). Items are nested bullets; the meaningful news
+// sentences are the ones carrying a source citation ([https://…]) — the shallow
+// bullets are just topic wikilinks, so we keep only cited lines.
 function parseEvents(wikitext) {
   const lines = wikitext.split('\n');
   let category = '';
   const events = [];
   for (const raw of lines) {
-    const catM = raw.match(/^[:*#\s]*;\s*(.+?)\s*$/);
-    if (catM) {
-      category = catM[1].replace(/\[\[([^\]|]*\|)?([^\]]+)\]\]/g, '$2').replace(/'''?/g, '').trim();
-      continue;
-    }
+    const boldCat = raw.match(/^\s*'''([^']+?)'''\s*$/);
+    const defCat = raw.match(/^[:*#\s]*;\s*(.+?)\s*$/);
+    if (boldCat) { category = cleanCategory(boldCat[1]); continue; }
+    if (defCat) { category = cleanCategory(defCat[1]); continue; }
+
     const bulletM = raw.match(/^[:#\s]*\*+\s*(.+)$/);
     if (!bulletM) continue;
-    const { text, url } = stripMarkup(bulletM[1]);
-    if (text && text.length > 12) events.push({ category, title: text, url });
+    const content = bulletM[1];
+    if (!/\[https?:\/\//.test(content)) continue; // keep only cited news items
+
+    const { text, url } = stripMarkup(content);
+    if (text && text.length > 20) events.push({ category, title: text, url });
   }
   return events;
 }
