@@ -50,11 +50,12 @@ export default function DayNews({ date }) {
   return (
     <div className="py-1">
       <div className="text-[10px] uppercase tracking-wider text-body/50 mb-1">
-        {entry.mode === 'market' ? 'Market & economy headlines' : 'Top U.S. headlines'} · {fmtDate(date)}
+        Major U.S. &amp; world events · {fmtDate(date)}
       </div>
       <ul className="flex flex-col gap-1.5">
         {entry.items.map((n, i) => (
           <li key={i} className="text-[12px] leading-snug">
+            {n.category && <span className="text-accent/70">{n.category}: </span>}
             <a
               href={n.url}
               target="_blank"
@@ -63,10 +64,10 @@ export default function DayNews({ date }) {
             >
               {n.title}
             </a>
-            {n.source && <span className="text-body/40"> — {n.source}</span>}
           </li>
         ))}
       </ul>
+      <div className="text-[10px] text-body/40 mt-1.5">Source: Wikipedia Current events</div>
     </div>
   );
 }

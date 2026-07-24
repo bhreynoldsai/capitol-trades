@@ -1,68 +1,87 @@
-// Vercel serverless function: major U.S. news for a given date, to provide
+// Vercel serverless function: major U.S./world news for a given date, to give
 // context for why a member of Congress may have traded that day.
 //
-// Backed by GDELT's DOC 2.0 API — free, no key, historical coverage. We ask for
-// market/economy-relevant U.S. English coverage that day and fall back to major
-// wire/business outlets if the themed query is empty. Past-date news is static,
-// so responses are cached hard at the edge.
+// Backed by Wikipedia's "Portal:Current events" — a free, no-key, curated daily
+// digest of major events by category (Business & economy, Politics, Disasters,
+// Armed conflicts, …). Reliable from serverless (unlike GDELT, which refuses
+// connections from cloud IPs). Past-date entries are static, so we cache hard.
 //
-//   GET /api/news?date=YYYY-MM-DD  ->  { date, items: [{title, source, url, time}] }
+//   GET /api/news?date=YYYY-MM-DD          -> { date, items: [{title, source, url}] }
+//   GET /api/news?date=YYYY-MM-DD&debug=1  -> raw wikitext (for parser tuning)
 
-const GDELT = 'https://api.gdeltproject.org/api/v2/doc/doc';
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
 
-// Market-moving themes first — these are what plausibly drive trading decisions.
-const THEMED =
-  '(theme:ECON_STOCKMARKET OR theme:ECON_INTEREST_RATE OR theme:ECON_INFLATION OR ' +
-  'theme:ECON_EARNINGSREPORT OR theme:ECON_CENTRALBANK OR theme:ECON_BANKRUPTCY OR ' +
-  'theme:USPEC_POLICY1) sourcecountry:US sourcelang:english';
+// Categories most relevant to trading decisions come first.
+const PREFERRED = [/business/i, /econom/i, /politic/i, /law and crime/i, /international/i];
 
-// Fallback: top general coverage from major U.S. wire/business outlets that day.
-const MAJORS =
-  '(domainis:reuters.com OR domainis:apnews.com OR domainis:cnbc.com OR ' +
-  'domainis:bloomberg.com OR domainis:wsj.com OR domainis:nytimes.com OR ' +
-  'domainis:washingtonpost.com OR domainis:politico.com) sourcecountry:US';
-
-function toDateLabel(seendate) {
-  // GDELT seendate looks like "20260720T133000Z".
-  if (!seendate) return null;
-  const m = String(seendate).match(/^(\d{4})(\d{2})(\d{2})/);
-  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+function pageTitle(date) {
+  const [y, m, d] = date.split('-').map(Number);
+  return `Portal:Current events/${y} ${MONTHS[m - 1]} ${d}`; // day, no leading zero
 }
 
-async function gdelt(query, start, end) {
+async function fetchWikitext(date) {
+  const title = pageTitle(date);
   const url =
-    `${GDELT}?query=${encodeURIComponent(query)}` +
-    `&mode=artlist&format=json&maxrecords=25&sort=hybridrel` +
-    `&startdatetime=${start}&enddatetime=${end}`;
-  const res = await fetch(url, { headers: { 'User-Agent': 'capitol-trades/1.0' } });
-  if (!res.ok) throw new Error(`GDELT HTTP ${res.status}`);
-  // GDELT sometimes returns non-JSON (HTML error) for malformed queries.
-  const text = await res.text();
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    return [];
-  }
-  return Array.isArray(json.articles) ? json.articles : [];
+    'https://en.wikipedia.org/w/api.php?action=parse&prop=wikitext&format=json' +
+    `&formatversion=2&redirects=1&page=${encodeURIComponent(title)}`;
+  const res = await fetch(url, { headers: { 'User-Agent': 'capitol-trades/1.0 (news context)' } });
+  if (!res.ok) throw new Error(`Wikipedia HTTP ${res.status}`);
+  const json = await res.json();
+  if (json.error) return null;
+  return json.parse?.wikitext || '';
 }
 
-function clean(articles, cap = 6) {
-  const seen = new Set();
-  const out = [];
-  for (const a of articles) {
-    const title = (a.title || '').trim();
-    if (!title || seen.has(title.toLowerCase())) continue;
-    seen.add(title.toLowerCase());
-    out.push({
-      title,
-      source: a.domain || '',
-      url: a.url || '',
-      time: toDateLabel(a.seendate),
-    });
-    if (out.length >= cap) break;
+// Strip MediaWiki markup from a single bullet line, pulling out the first
+// external link URL as the item's source link when present.
+function stripMarkup(line) {
+  let url = '';
+  let s = line;
+
+  // External links: [https://url label] -> label (capture url)
+  s = s.replace(/\[(https?:\/\/[^\s\]]+)\s+([^\]]+)\]/g, (_, u, label) => {
+    if (!url) url = u;
+    return label;
+  });
+  s = s.replace(/\[(https?:\/\/[^\s\]]+)\]/g, (_, u) => {
+    if (!url) url = u;
+    return '';
+  });
+
+  s = s
+    .replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, '')
+    .replace(/<ref[^>]*\/>/gi, '')
+    .replace(/\{\{[^{}]*\}\}/g, '')
+    .replace(/\[\[(?:File|Image):[^\]]*\]\]/gi, '')
+    .replace(/\[\[[^\]|]*\|([^\]]+)\]\]/g, '$1') // [[a|b]] -> b
+    .replace(/\[\[([^\]]+)\]\]/g, '$1') // [[a]] -> a
+    .replace(/'''?/g, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[–—-]\s*/, '');
+
+  return { text: s, url };
+}
+
+function parseEvents(wikitext) {
+  const lines = wikitext.split('\n');
+  let category = '';
+  const events = [];
+  for (const raw of lines) {
+    const catM = raw.match(/^[:*#\s]*;\s*(.+?)\s*$/);
+    if (catM) {
+      category = catM[1].replace(/\[\[([^\]|]*\|)?([^\]]+)\]\]/g, '$2').replace(/'''?/g, '').trim();
+      continue;
+    }
+    const bulletM = raw.match(/^[:#\s]*\*+\s*(.+)$/);
+    if (!bulletM) continue;
+    const { text, url } = stripMarkup(bulletM[1]);
+    if (text && text.length > 12) events.push({ category, title: text, url });
   }
-  return out;
+  return events;
 }
 
 export default async function handler(req, res) {
@@ -71,23 +90,35 @@ export default async function handler(req, res) {
     res.status(400).json({ error: 'date must be YYYY-MM-DD', items: [] });
     return;
   }
-  const ymd = date.replace(/-/g, '');
-  const start = `${ymd}000000`;
-  const end = `${ymd}235959`;
-
   try {
-    let articles = await gdelt(THEMED, start, end);
-    let mode = 'market';
-    if (articles.length < 3) {
-      const more = await gdelt(MAJORS, start, end);
-      if (more.length > articles.length) {
-        articles = more;
-        mode = 'general';
-      }
+    const wikitext = await fetchWikitext(date);
+    if (req.query.debug) {
+      res.status(200).json({ date, page: pageTitle(date), wikitext: (wikitext || '').slice(0, 4000) });
+      return;
     }
-    // Past-date news never changes; cache for a week, allow stale for a month.
+    if (!wikitext) {
+      res.setHeader('Cache-Control', 's-maxage=86400');
+      res.status(200).json({ date, items: [] });
+      return;
+    }
+
+    const events = parseEvents(wikitext);
+    // Rank preferred (market/politics) categories first, keep original order within.
+    const score = (e) => {
+      const i = PREFERRED.findIndex((re) => re.test(e.category));
+      return i === -1 ? PREFERRED.length : i;
+    };
+    events.sort((a, b) => score(a) - score(b));
+
+    const items = events.slice(0, 7).map((e) => ({
+      title: e.title,
+      category: e.category,
+      source: 'Wikipedia Current events',
+      url: e.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(pageTitle(date))}`,
+    }));
+
     res.setHeader('Cache-Control', 's-maxage=604800, stale-while-revalidate=2592000');
-    res.status(200).json({ date, mode, items: clean(articles) });
+    res.status(200).json({ date, items });
   } catch (err) {
     const cause = err && err.cause ? `${err.cause.code || ''} ${err.cause.message || err.cause}`.trim() : '';
     res.status(502).json({ error: String(err.message || err), cause, items: [] });
