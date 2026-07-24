@@ -56,7 +56,8 @@ async function fromQuiver(key) {
   // Bulk can be very large; keep the most recent slice to bound the payload.
   const MAX = Number(process.env.QUIVER_MAX || 5000);
   if (all.length > MAX) {
-    all.sort((a, b) => String(b.TransactionDate || '').localeCompare(String(a.TransactionDate || '')));
+    const when = (r) => String(r.Traded || r.TransactionDate || r.transactionDate || '');
+    all.sort((a, b) => when(b).localeCompare(when(a)));
     return all.slice(0, MAX);
   }
   return all;

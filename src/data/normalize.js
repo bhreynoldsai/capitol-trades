@@ -23,6 +23,27 @@ export function parseAmount(raw) {
   return { label: label || 'Unknown', min: null, max: null };
 }
 
+// STOCK Act disclosure brackets, by lower bound. Quiver's `Trade_Size_USD` is a
+// single number equal to the bracket's lower bound, so we rebuild the full range
+// (and a readable label) from it — giving correct midpoints for volume math.
+const STOCK_ACT_BRACKETS = [
+  [1001, 15000], [15001, 50000], [50001, 100000], [100001, 250000],
+  [250001, 500000], [500001, 1000000], [1000001, 5000000],
+  [5000001, 25000000], [25000001, 50000000], [50000001, 50000000],
+];
+
+export function amountFromEstimate(v) {
+  if (v == null || Number.isNaN(v)) return { label: 'Unknown', min: null, max: null };
+  const b = STOCK_ACT_BRACKETS.find(([lo, hi]) => v >= lo && v <= hi)
+    || STOCK_ACT_BRACKETS.find(([lo]) => v <= lo);
+  if (b) {
+    const [min, max] = b;
+    const label = min === max ? `$${min.toLocaleString()}+` : `$${min.toLocaleString()} - $${max.toLocaleString()}`;
+    return { label, min, max };
+  }
+  return { label: `$${v.toLocaleString()}`, min: v, max: v };
+}
+
 // Accepts "2021-09-27", "09/27/2021", "9/27/21" -> "YYYY-MM-DD" (or null).
 export function normalizeDate(raw) {
   if (!raw) return null;
@@ -75,9 +96,10 @@ export function normalizeRecord(r, chamberHint) {
   //     type, transaction_date, disclosure_date, district
   const fmpName = [r.firstName, r.lastName].filter(Boolean).join(' ');
   const member = cleanName(
-    r.member || r.representative || r.senator || r.Representative || r.Senator || r.name || fmpName || 'Unknown'
+    r.member || r.representative || r.senator || r.Representative || r.Senator ||
+    r.Name || r.name || fmpName || 'Unknown'
   );
-  const houseField = r.House || r.chamber || chamberHint;
+  const houseField = r.House || r.Chamber || r.chamber || chamberHint;
   const chamber =
     houseField === 'Representatives' ? 'House'
       : houseField || (r.senator || r.Senator ? 'Senate' : r.representative || r.Representative ? 'House' : 'Unknown');
@@ -89,13 +111,18 @@ export function normalizeRecord(r, chamberHint) {
     const min = Number(r.amountFrom) || null;
     const max = Number(r.amountTo) || null;
     amt = { min, max, label: min != null && max != null ? `$${min.toLocaleString()} - $${max.toLocaleString()}` : 'Unknown' };
+  } else if (r.Trade_Size_USD != null && r.Trade_Size_USD !== '') {
+    // Quiver reports a single lower-bound number; rebuild the STOCK Act bracket.
+    amt = amountFromEstimate(Number(r.Trade_Size_USD));
   } else {
     amt = parseAmount(r.amountLabel || r.amount || r.Range || r.Amount);
   }
 
-  const transactionDate = normalizeDate(r.transactionDate || r.transaction_date || r.TransactionDate);
+  const transactionDate = normalizeDate(
+    r.transactionDate || r.transaction_date || r.TransactionDate || r.Traded
+  );
   const disclosureDate = normalizeDate(
-    r.disclosureDate || r.disclosure_date || r.filingDate || r.ReportDate
+    r.disclosureDate || r.disclosure_date || r.filingDate || r.ReportDate || r.Filed
   );
   const district = r.district || '';
   const office = r.office || '';
