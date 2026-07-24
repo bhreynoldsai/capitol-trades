@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   fmtDate, fmtUSD, amountMidpoint, tradeSide, SIDE_COLOR,
   PARTY_COLOR, PARTY_LABEL,
 } from '../utils/format.js';
 import { topTickers } from '../utils/aggregate.js';
+import DayNews from './DayNews.jsx';
 
 export default function MemberDrawer({ member, trades, onClose }) {
   const rows = useMemo(
@@ -82,31 +83,53 @@ export default function MemberDrawer({ member, trades, onClose }) {
           <div className="text-[11px] uppercase tracking-wider text-body/60 mb-2">All transactions</div>
           <ul className="flex flex-col divide-y divide-edge/60">
             {rows.map((t) => {
-              const side = tradeSide(t.type);
-              return (
-                <li key={t.id} className="py-2 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-heading text-sm">{t.ticker || '—'}</span>
-                      <span
-                        className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                        style={{ backgroundColor: `${SIDE_COLOR[side]}22`, color: SIDE_COLOR[side] }}
-                      >
-                        {t.type}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-body/50 truncate">{t.asset}</div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-sm text-heading">{fmtUSD(amountMidpoint(t))}</div>
-                    <div className="text-[11px] text-body/50">{fmtDate(t.transactionDate)}</div>
-                  </div>
-                </li>
-              );
+              return <TradeRow key={t.id} t={t} />;
             })}
           </ul>
         </div>
       </div>
     </div>
+  );
+}
+
+function TradeRow({ t }) {
+  const [open, setOpen] = useState(false);
+  const side = tradeSide(t.type);
+  return (
+    <li className="py-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-heading text-sm">{t.ticker || '—'}</span>
+            <span
+              className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+              style={{ backgroundColor: `${SIDE_COLOR[side]}22`, color: SIDE_COLOR[side] }}
+            >
+              {t.type}
+            </span>
+          </div>
+          <div className="text-[11px] text-body/50 truncate">{t.asset}</div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-sm text-heading">{fmtUSD(amountMidpoint(t))}</div>
+          <div className="text-[11px] text-body/50">{fmtDate(t.transactionDate)}</div>
+        </div>
+      </div>
+      {t.transactionDate && (
+        <div className="mt-1">
+          <button
+            className="text-[11px] text-accent/80 hover:text-accent"
+            onClick={() => setOpen((o) => !o)}
+          >
+            {open ? '▾ hide news that day' : '▸ news that day'}
+          </button>
+          {open && (
+            <div className="mt-1 pl-3 border-l border-edge">
+              <DayNews date={t.transactionDate} />
+            </div>
+          )}
+        </div>
+      )}
+    </li>
   );
 }
