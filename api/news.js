@@ -89,6 +89,7 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 's-maxage=604800, stale-while-revalidate=2592000');
     res.status(200).json({ date, mode, items: clean(articles) });
   } catch (err) {
-    res.status(502).json({ error: String(err.message || err), items: [] });
+    const cause = err && err.cause ? `${err.cause.code || ''} ${err.cause.message || err.cause}`.trim() : '';
+    res.status(502).json({ error: String(err.message || err), cause, items: [] });
   }
 }
