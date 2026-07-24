@@ -119,7 +119,7 @@ export function normalizeRecord(r, chamberHint) {
   }
 
   const transactionDate = normalizeDate(
-    r.transactionDate || r.transaction_date || r.TransactionDate || r.Traded
+    r.transactionDate || r.transaction_date || r.TransactionDate || r.Traded || r.Date
   );
   const disclosureDate = normalizeDate(
     r.disclosureDate || r.disclosure_date || r.filingDate || r.ReportDate || r.Filed

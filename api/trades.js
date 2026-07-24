@@ -43,15 +43,37 @@ async function fromQuiver(key) {
   const tag = (rows, chamber) =>
     Array.isArray(rows) ? rows.map((r) => ({ chamber, ...r })) : [];
 
-  // Fetch House + Senate for a given tier and tag chamber.
+  // Dedup key spanning both feeds' field names (member + ticker + date +
+  // action + amount). Quiver's congresstrading feed already includes Senate
+  // trades — with Party and a TransactionDate — while senatetrading repeats
+  // them with fewer fields (no party, a `Date` field). Keeping the first
+  // (congresstrading) occurrence gives the richer record and avoids duplicates.
+  const keyOf = (r) =>
+    [
+      r.BioGuideID || r.Representative || r.Senator || r.Name || '',
+      String(r.Ticker || '').toUpperCase(),
+      r.TransactionDate || r.Traded || r.Date || '',
+      r.Transaction || '',
+      r.Amount || r.Range || r.Trade_Size_USD || '',
+    ].join('|');
+
   async function fetchTier(tier) {
     const base = `https://api.quiverquant.com/beta/${tier}`;
-    const [house, senate] = await Promise.all([
+    const [congress, senate] = await Promise.all([
       quiverGet(`${base}/congresstrading`).catch(() => []),
       quiverGet(`${base}/senatetrading`).catch(() => []),
     ]);
-    // `chamber` spread first so an explicit House/Senate field in the record wins.
-    return [...tag(house, 'House'), ...tag(senate, 'Senate')];
+    // congresstrading first so its richer records win the dedupe.
+    const rows = [...tag(congress, 'House'), ...tag(senate, 'Senate')];
+    const seen = new Set();
+    const out = [];
+    for (const r of rows) {
+      const k = keyOf(r);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(r);
+    }
+    return out;
   }
 
   // Default to the "live" feed: recent disclosures, a few hundred rows — fast to
